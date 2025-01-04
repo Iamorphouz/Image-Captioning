@@ -19,7 +19,9 @@ import requests
 from io import BytesIO
 
 # Load the DenseNet201 model once to avoid reloading it for every request
-base_model = DenseNet201()
+# base_model = DenseNet201()
+base_model = DenseNet201(weights=None)  # Initialize model without weights
+base_model.load_weights('models/densenet201_weights_tf_dim_ordering_tf_kernels.h5')
 feature_extractor = Model(inputs=base_model.input, outputs=base_model.layers[-2].output)
 
 
