@@ -14,7 +14,6 @@ from pydantic import BaseModel, HttpUrl
 import requests
 from io import BytesIO
 
-
 # Load the DenseNet201 model once to avoid reloading it for every request
 base_model = DenseNet201()
 feature_extractor = Model(inputs=base_model.input, outputs=base_model.layers[-2].output)
@@ -133,4 +132,3 @@ def predict_caption(model, tokenizer, max_length, feature):
     # Remove "startseq" and "endseq" from the caption
     caption = in_text.split(" ")[1:-1]  # Split into words and remove the first and last tokens
     return " ".join(caption)  # Rejoin the remaining words into a single string
-    return caption
