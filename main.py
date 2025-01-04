@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Request
 from fastapi.responses import HTMLResponse,JSONResponse
 from keras.applications import DenseNet201
 from keras.utils import img_to_array
@@ -9,6 +9,11 @@ import pickle
 from keras.models import Model
 from PIL import Image
 import numpy as np
+
+from pydantic import BaseModel, HttpUrl
+import requests
+from io import BytesIO
+
 
 # Load the DenseNet201 model once to avoid reloading it for every request
 base_model = DenseNet201()
@@ -46,39 +51,159 @@ async def render_form():
     </html>
     """
 
-@app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    """
-    API endpoint to extract features from an uploaded image file.
-    """
-    if file.content_type not in ["image/jpeg", "image/png"]:
-        return {"error": "Only JPEG or PNG images are supported."}
-    try:
-        # File metadata
-        filename = file.filename
-        img_size = 224
 
-        # Open the uploaded image file
-        img = Image.open(file.file)  # 'file.file' is a SpooledTemporaryFile
-        
+@app.post("/predict")
+async def predict(request: Request):
+    # Parse JSON body from the incoming request
+    request_body = await request.json()
+    print("Received request body:", request_body)
+    url = request_body.get("url")       # Extract the 'url' from the request body
+    print("Received URL:", url)
+    # return {"url": url}
+
+    # return {"message": "Request received", "data": request_body}
+    # print(message, request_body)
+
+    response = requests.get(url)
+    response.raise_for_status()  # Ensure the request was successful
+
+    # Open the image using PIL
+    img = Image.open(BytesIO(response.content))
+
+    # Convert to RGB if necessary
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+
+    # Resize the image
+    img_size = 224
+    img = img.resize((img_size, img_size))
+
+    # Extract features and generate caption (your existing logic)
+    feature = extract_features(img)
+    caption = predict_caption(caption_model, tokenizer, max_length, feature)
+    print("url : ", url, "caption", caption)
+
+    # Return the result
+    return JSONResponse({
+        "url": url,
+        "caption": caption,
+    })
+
+
+
+'''
+    try:
+        # Fetch the image from the URL
+        response = requests.get(request.url)
+        response.raise_for_status()  # Ensure the request was successful
+
+        # Open the image using PIL
+        img = Image.open(BytesIO(response.content))
+
+        # Convert to RGB if necessary
         if img.mode != "RGB":
             img = img.convert("RGB")
 
-        img = img.resize((img_size, img_size))  # Resize the image
+        # Resize the image
+        img_size = 224
+        img = img.resize((img_size, img_size))
 
-        # Extract features
+        # Extract features and generate caption (your existing logic)
         feature = extract_features(img)
-
         caption = predict_caption(caption_model, tokenizer, max_length, feature)
-        
+        print("******************************")
+        print(caption)
+        # Return the result
         return JSONResponse({
-            "filename": filename,
+            "url": request.url,
             "caption": caption,
         })
-            # "features": feature.tolist()  # Convert NumPy array to list for JSON serialization
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+# class ImageRequest(BaseModel):
+#     file: str  # Ensure `file` is defined as a string in the request body
+
+# @app.post("/predict")
+# async def predict(request: ImageRequest):
+#     # Access the `file` field from the request
+#     image_url = request.file
+#     # (Processing logic here)
+#     return {"message": "Image URL received successfully", "url": image_url}
+
+'''
+# class ImageUrlRequest(BaseModel):
+#     url: HttpUrl  # Validates that the input is a proper URL
+
+# @app.post("/predict")
+# async def predict(request: ImageUrlRequest):
+#     """
+#     API endpoint to extract features from an image provided via a URL.
+#     """
+#     try:
+#         # Fetch the image from the URL
+#         response = requests.get(request.url)
+#         response.raise_for_status()  # Ensure the request was successful
+
+#         # Open the image using PIL
+#         img = Image.open(BytesIO(response.content))
+
+#         # Convert to RGB if necessary
+#         if img.mode != "RGB":
+#             img = img.convert("RGB")
+
+#         # Resize the image
+#         img_size = 224
+#         img = img.resize((img_size, img_size))
+
+#         # Extract features and generate caption (your existing logic)
+#         feature = extract_features(img)
+#         caption = predict_caption(caption_model, tokenizer, max_length, feature)
+
+#         # Return the result
+#         return JSONResponse({
+#             "url": request.url,
+#             "caption": caption,
+#         })
+
+#     except Exception as e:
+#         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# @app.post("/predict")
+# async def predict(file: UploadFile = File(...)):
+#     """
+#     API endpoint to extract features from an uploaded image file.
+#     """
+#     if file.content_type not in ["image/jpeg", "image/png"]:
+#         return {"error": "Only JPEG or PNG images are supported."}
+#     try:
+#         # File metadata
+#         filename = file.filename
+#         img_size = 224
+
+#         # Open the uploaded image file
+#         img = Image.open(file.file)  # 'file.file' is a SpooledTemporaryFile
+        
+#         if img.mode != "RGB":
+#             img = img.convert("RGB")
+
+#         img = img.resize((img_size, img_size))  # Resize the image
+
+#         # Extract features
+#         feature = extract_features(img)
+
+#         caption = predict_caption(caption_model, tokenizer, max_length, feature)
+        
+#         return JSONResponse({
+#             "filename": filename,
+#             "caption": caption,
+#         })
+#             # "features": feature.tolist()  # Convert NumPy array to list for JSON serialization
+
+#     except Exception as e:
+#         return JSONResponse({"error": str(e)}, status_code=500)
 
 def extract_features(img):
     """
