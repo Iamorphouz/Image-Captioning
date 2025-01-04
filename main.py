@@ -5,7 +5,7 @@ from keras.utils import img_to_array
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import load_model
 import pickle
-
+from fastapi.middleware.cors import CORSMiddleware
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppresses TensorFlow info and warnings
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Suppresses TensorFlow info and warnings
@@ -30,6 +30,14 @@ max_length = 34
 caption_model = load_model("models/caption_model.keras")
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # or specify your frontend URL, e.g., ["https://your-website-a.com"]
+    allow_credentials=True,
+    allow_methods=["*"],  # or specify allowed HTTP methods, e.g., ["GET", "POST"]
+    allow_headers=["*"],  # or specify allowed headers
+)
 
 @app.get("/")
 async def read_root():
