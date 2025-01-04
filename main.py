@@ -6,6 +6,10 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import load_model
 import pickle
 
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppresses TensorFlow info and warnings
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Suppresses TensorFlow info and warnings
+
 from keras.models import Model
 from PIL import Image
 import numpy as np
