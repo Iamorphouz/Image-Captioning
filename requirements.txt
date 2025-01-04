@@ -1,6 +1,6 @@
 fastapi[standard]
 uvicorn
-tensorflow
+tensorflow-cpu
 keras
 pillow
 numpy
