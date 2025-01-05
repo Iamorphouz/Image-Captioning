@@ -112,7 +112,7 @@ if st.button("Generate Caption from URL"):
     if image_url:
         try:
             response = requests.post(
-                "/predict/url",
+                "https://image-captioning-nvkjov93eolc6tok6mh3jy.streamlit.app/predict/url",
                 json={"image_url": image_url}
             )
             if response.status_code == 200:
@@ -128,7 +128,7 @@ if st.button("Generate Caption from File") and uploaded_file:
     try:
         files = {"file": uploaded_file.getvalue()}
         response = requests.post(
-            "/predict/file",
+            "https://image-captioning-nvkjov93eolc6tok6mh3jy.streamlit.app/predict/file",
             files=files
         )
         if response.status_code == 200:
