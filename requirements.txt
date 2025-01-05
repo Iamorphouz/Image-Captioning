@@ -1,3 +1,4 @@
+streamlit
 fastapi[standard]
 uvicorn
 tensorflow-cpu
