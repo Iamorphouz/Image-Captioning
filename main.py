@@ -1,256 +1,145 @@
-from fastapi import FastAPI, File, UploadFile, Request
-from fastapi.responses import HTMLResponse,JSONResponse
+import streamlit as st
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.wsgi import WSGIMiddleware
 from keras.applications import DenseNet201
 from keras.utils import img_to_array
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import load_model
 import pickle
-
 from keras.models import Model
 from PIL import Image
 import numpy as np
-
-from pydantic import BaseModel, HttpUrl
-import requests
 from io import BytesIO
+import requests
 
+# Load pre-trained models and tokenizer
+@st.cache_resource
+def load_models():
+    base_model = DenseNet201(weights=None)
+    base_model.load_weights('models/densenet201_weights_tf_dim_ordering_tf_kernels.h5')
+    feature_extractor = Model(inputs=base_model.input, outputs=base_model.layers[-2].output)
 
-# Load the DenseNet201 model once to avoid reloading it for every request
-base_model = DenseNet201()
-feature_extractor = Model(inputs=base_model.input, outputs=base_model.layers[-2].output)
+    with open('models/tokenizer.pkl', 'rb') as f:
+        tokenizer = pickle.load(f)
 
+    caption_model = load_model("models/caption_model.keras")
+    return feature_extractor, tokenizer, caption_model
 
-with open('models/tokenizer.pkl', 'rb') as f:
-    tokenizer = pickle.load(f)
+feature_extractor, tokenizer, caption_model = load_models()
 max_length = 34
 
-caption_model = load_model("models/caption_model.keras")
+# FastAPI app setup
+fastapi_app = FastAPI()
 
-app = FastAPI()
+fastapi_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.get("/")
-async def read_root():
-    return {"message": "Hello, FastAPI!"}
-
-@app.get("/upload", response_class=HTMLResponse)
-async def render_form():
-    """Serve the HTML form to upload an image."""
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Upload Image</title>
-    </head>
-    <body>
-        <h2>Upload an Image</h2>
-        <form action="/predict" method="post" enctype="multipart/form-data">
-            <input type="file" name="file" accept="image/*" required>
-            <button type="submit">Upload</button>
-        </form>
-    </body>
-    </html>
-    """
-
-
-@app.post("/predict")
-async def predict(request: Request):
-    # Parse JSON body from the incoming request
-    request_body = await request.json()
-    print("Received request body:", request_body)
-    url = request_body.get("url")       # Extract the 'url' from the request body
-    print("Received URL:", url)
-    # return {"url": url}
-
-    # return {"message": "Request received", "data": request_body}
-    # print(message, request_body)
-
-    response = requests.get(url)
-    response.raise_for_status()  # Ensure the request was successful
-
-    # Open the image using PIL
-    img = Image.open(BytesIO(response.content))
-
-    # Convert to RGB if necessary
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-
-    # Resize the image
-    img_size = 224
-    img = img.resize((img_size, img_size))
-
-    # Extract features and generate caption (your existing logic)
-    feature = extract_features(img)
-    caption = predict_caption(caption_model, tokenizer, max_length, feature)
-    print("url : ", url, "caption", caption)
-
-    # Return the result
-    return JSONResponse({
-        "url": url,
-        "caption": caption,
-    })
-
-
-
-'''
-    try:
-        # Fetch the image from the URL
-        response = requests.get(request.url)
-        response.raise_for_status()  # Ensure the request was successful
-
-        # Open the image using PIL
-        img = Image.open(BytesIO(response.content))
-
-        # Convert to RGB if necessary
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-
-        # Resize the image
-        img_size = 224
-        img = img.resize((img_size, img_size))
-
-        # Extract features and generate caption (your existing logic)
-        feature = extract_features(img)
-        caption = predict_caption(caption_model, tokenizer, max_length, feature)
-        print("******************************")
-        print(caption)
-        # Return the result
-        return JSONResponse({
-            "url": request.url,
-            "caption": caption,
-        })
-
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-# class ImageRequest(BaseModel):
-#     file: str  # Ensure `file` is defined as a string in the request body
-
-# @app.post("/predict")
-# async def predict(request: ImageRequest):
-#     # Access the `file` field from the request
-#     image_url = request.file
-#     # (Processing logic here)
-#     return {"message": "Image URL received successfully", "url": image_url}
-
-'''
-# class ImageUrlRequest(BaseModel):
-#     url: HttpUrl  # Validates that the input is a proper URL
-
-# @app.post("/predict")
-# async def predict(request: ImageUrlRequest):
-#     """
-#     API endpoint to extract features from an image provided via a URL.
-#     """
-#     try:
-#         # Fetch the image from the URL
-#         response = requests.get(request.url)
-#         response.raise_for_status()  # Ensure the request was successful
-
-#         # Open the image using PIL
-#         img = Image.open(BytesIO(response.content))
-
-#         # Convert to RGB if necessary
-#         if img.mode != "RGB":
-#             img = img.convert("RGB")
-
-#         # Resize the image
-#         img_size = 224
-#         img = img.resize((img_size, img_size))
-
-#         # Extract features and generate caption (your existing logic)
-#         feature = extract_features(img)
-#         caption = predict_caption(caption_model, tokenizer, max_length, feature)
-
-#         # Return the result
-#         return JSONResponse({
-#             "url": request.url,
-#             "caption": caption,
-#         })
-
-#     except Exception as e:
-#         return JSONResponse({"error": str(e)}, status_code=500)
-
-
-# @app.post("/predict")
-# async def predict(file: UploadFile = File(...)):
-#     """
-#     API endpoint to extract features from an uploaded image file.
-#     """
-#     if file.content_type not in ["image/jpeg", "image/png"]:
-#         return {"error": "Only JPEG or PNG images are supported."}
-#     try:
-#         # File metadata
-#         filename = file.filename
-#         img_size = 224
-
-#         # Open the uploaded image file
-#         img = Image.open(file.file)  # 'file.file' is a SpooledTemporaryFile
-        
-#         if img.mode != "RGB":
-#             img = img.convert("RGB")
-
-#         img = img.resize((img_size, img_size))  # Resize the image
-
-#         # Extract features
-#         feature = extract_features(img)
-
-#         caption = predict_caption(caption_model, tokenizer, max_length, feature)
-        
-#         return JSONResponse({
-#             "filename": filename,
-#             "caption": caption,
-#         })
-#             # "features": feature.tolist()  # Convert NumPy array to list for JSON serialization
-
-#     except Exception as e:
-#         return JSONResponse({"error": str(e)}, status_code=500)
-
+# Helper Functions
 def extract_features(img):
-    """
-    Extract features from a given image using the pre-trained DenseNet201 model.
-    """
-    # Convert the image to a NumPy array
-    img = img_to_array(img)
-    img = img / 255.0  # Normalize pixel values to [0, 1]
+    img = img_to_array(img) / 255.0  # Normalize pixel values to [0, 1]
     img = np.expand_dims(img, axis=0)  # Add batch dimension
-
-    # Use the feature extractor model to predict features
     feature = feature_extractor.predict(img, verbose=0)
+    return feature[0]
 
-    return feature[0]  # Return the feature vector
-
-def idx_to_word(integer,tokenizer):
-
+def idx_to_word(integer, tokenizer):
     for word, index in tokenizer.word_index.items():
-        if index==integer:
+        if index == integer:
             return word
     return None
 
 def predict_caption(model, tokenizer, max_length, feature):
-
     feature = np.expand_dims(feature, axis=0)
     in_text = "startseq"
-    for i in range(max_length):
+    for _ in range(max_length):
         sequence = tokenizer.texts_to_sequences([in_text])[0]
         sequence = pad_sequences([sequence], max_length)
-
-        y_pred = model.predict([feature,sequence])
+        y_pred = model.predict([feature, sequence], verbose=0)
         y_pred = np.argmax(y_pred)
-
-        print("Feature shape:", feature.shape)
-        print("Sequence shape:", sequence.shape)
-
         word = idx_to_word(y_pred, tokenizer)
-
         if word is None:
             break
-
-        in_text+= " " + word
-
+        in_text += " " + word
         if word == 'endseq':
             break
-    
-    # Remove "startseq" and "endseq" from the caption
-    caption = in_text.split(" ")[1:-1]  # Split into words and remove the first and last tokens
-    return " ".join(caption)  # Rejoin the remaining words into a single string
-    return caption
+    return " ".join(in_text.split(" ")[1:-1])  # Remove "startseq" and "endseq"
+
+@fastapi_app.post("/predict/url")
+async def predict_from_url(image_url: str):
+    try:
+        response = requests.get(image_url)
+        response.raise_for_status()
+        img = Image.open(BytesIO(response.content))
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img = img.resize((224, 224))
+        feature = extract_features(img)
+        caption = predict_caption(caption_model, tokenizer, max_length, feature)
+        return {"url": image_url, "caption": caption}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error processing image: {str(e)}")
+
+@fastapi_app.post("/predict/file")
+async def predict_from_file(file: UploadFile = File(...)):
+    try:
+        img = Image.open(BytesIO(await file.read()))
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img = img.resize((224, 224))
+        feature = extract_features(img)
+        caption = predict_caption(caption_model, tokenizer, max_length, feature)
+        return {"filename": file.filename, "caption": caption}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error processing image: {str(e)}")
+
+# Streamlit + FastAPI Integration
+st.title("Image Captioning Service with Streamlit and FastAPI")
+st.write("""
+This app allows users to generate captions for images via API endpoints exposed by FastAPI. 
+Use `/predict/url` or `/predict/file` for captioning.
+""")
+
+st.write("### Test API Endpoints")
+
+# Test URL Endpoint
+image_url = st.text_input("Enter Image URL:")
+if st.button("Generate Caption from URL"):
+    if image_url:
+        try:
+            response = requests.post(
+                "https://image-captioning-7ukhcm7guhnydscw6hliz3.streamlit.app/predict/url",
+                json={"image_url": image_url}
+            )
+            if response.status_code == 200:
+                st.success(f"Caption: {response.json()['caption']}")
+            else:
+                st.error(f"Error: {response.json()['detail']}")
+        except Exception as e:
+            st.error(f"Failed to connect to API: {e}")
+
+# Test File Upload Endpoint
+uploaded_file = st.file_uploader("Upload an Image File", type=["jpg", "jpeg", "png"])
+if st.button("Generate Caption from File") and uploaded_file:
+    try:
+        files = {"file": uploaded_file.getvalue()}
+        response = requests.post(
+            "https://image-captioning-7ukhcm7guhnydscw6hliz3.streamlit.app/predict/file",
+            files=files
+        )
+        if response.status_code == 200:
+            st.success(f"Caption: {response.json()['caption']}")
+        else:
+            st.error(f"Error: {response.json()['detail']}")
+    except Exception as e:
+        st.error(f"Failed to connect to API: {e}")
+
+# Mount FastAPI app to Streamlit
+st.write("### FastAPI Endpoints")
+st.write("You can also test endpoints directly via tools like Postman.")
+
+fastapi_app.add_middleware(WSGIMiddleware)
